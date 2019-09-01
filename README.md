@@ -35,7 +35,7 @@ mysql：5.7
 CREATE DATABASE `demo`CHARACTER SET utf8 COLLATE utf8_bin;
 User `demo`;
 CREATE TABLE `user` (
-  `id` tinyint(3) unsigned NOT NULL AUTO_INCREMENT COMMENT '用户id',
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '用户id',
   `name` varchar(32) COLLATE utf8_bin NOT NULL COMMENT '用户名',
   `age` int(10) unsigned DEFAULT NULL COMMENT '用户年龄',
   `gmt_create` datetime DEFAULT NULL COMMENT '记录创建时间',
