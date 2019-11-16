@@ -16,7 +16,7 @@
   * [使用Connection对象完成保存操作](#使用connection对象完成保存操作)
 * [源码分析](#源码分析)
   * [驱动注册](#驱动注册)
-    * [DriverManager](#drivermanager)
+    * [DriverManager.registerDriver](#drivermanagerregisterDriver)
     * [为什么Class.forName(com.mysql.cj.jdbc.Driver) 可以注册驱动？](#为什么classfornamecommysqlcjjdbcdriver-可以注册驱动)
     * [为什么JDK6后不需要Class.forName也能注册驱动？](#为什么jdk6后不需要classforname也能注册驱动)
   * [获得连接对象](#获得连接对象)
@@ -218,18 +218,63 @@ password=root
 
 ## 驱动注册
 
-### DriverManager
+### DriverManager.registerDriver
 
-`DriverManager`用于管理数据库驱动。`registeredDrivers`是`DriverManager`的成员属性，是一个集合，存放的是不同的数据库驱动对象。 
+`DriverManager`主要用于管理数据库驱动，并为我们提供了获取连接对象的接口。其中，它有一个重要的成员属性`registeredDrivers`，是一个`CopyOnWriteArrayList`集合（通过`ReentrantLock`实现线程安全），存放的是元素是`DriverInfo`对象。 
 
 ```java
+    //存放数据库驱动包装类的集合（线程安全）
     private final static CopyOnWriteArrayList<DriverInfo> registeredDrivers = new CopyOnWriteArrayList<>(); 
+    public static synchronized void registerDriver(java.sql.Driver driver)
+        throws SQLException {
+        //调用重载方法，传入的DriverAction对象为null
+        registerDriver(driver, null);
+    }
+    public static synchronized void registerDriver(java.sql.Driver driver,
+            DriverAction da)
+        throws SQLException {
+        if(driver != null) {
+            //当列表中没有这个DriverInfo对象时，加入列表。
+            //注意，这里判断对象是否已经存在，最终比较的是driver地址是否相等。
+            registeredDrivers.addIfAbsent(new DriverInfo(driver, da));
+        } else {
+            throw new NullPointerException();
+        }
+
+        println("registerDriver: " + driver);
+
+    }
+
 ```
-接下来是`DriverManager`的两个重要方法。  
+为什么集合存放的是`Driver`的包装类`DriverInfo`对象，而不是`Driver`对象呢？  
 
-1. `registerDriver`方法可以将驱动放入这个集合。  
+1. 通过`DriverInfo`的源码可知，当我们调用`equals`方法比较两个`DriverInfo`对象是否相等时，实际上比较的是`Driver`对象的地址，也就是说，我可以在`DriverManager`中注册多个MYSQL驱动。而如果直接存放的是`Driver`对象，就不能达到这种效果（因为没有遇到需要注册多个同类驱动的场景，所以我暂时理解不了这样做的好处）。  
 
-2. `getConnection`方法从这个集合中找到合适的驱动来获得连接对象。  
+2. `DriverInfo`中还包含了另一个成员属性`DriverAction`，当我们注销驱动时，必须调用它的`deregister`方法后才能将驱动从注册列表中移除，该方法决定注销驱动时应该如何处理活动连接等（其实一般在构造`DriverInfo`进行注册时，传入的`DriverAction`对象为空，根本不会去使用到这个对象，除非一开始注册就传入非空`DriverAction`对象）。  
+
+综上，集合中元素不是`Driver`对象而`DriverInfo`对象，主要考虑的是扩展某些功能，虽然这些功能几乎不会用到。  
+
+注意：考虑篇幅，以下代码经过修改，仅保留所需部分。  
+
+```java
+class DriverInfo {
+
+    final Driver driver;
+    DriverAction da;
+    DriverInfo(Driver driver, DriverAction action) {
+        this.driver = driver;
+        da = action;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        //这里对比的是地址
+        return (other instanceof DriverInfo)
+                && this.driver == ((DriverInfo) other).driver;
+    }
+
+}
+```
 
 ### 为什么Class.forName(com.mysql.cj.jdbc.Driver) 可以注册驱动？ 
 当加载`com.mysql.cj.jdbc.Driver`这个类时，静态代码块中会执行注册驱动的方法。  
@@ -237,6 +282,7 @@ password=root
 ```java
     static {
         try {
+            //静态代码块中注册当前驱动
             java.sql.DriverManager.registerDriver(new Driver());
         } catch (SQLException E) {
             throw new RuntimeException("Can't register driver!");
@@ -246,15 +292,68 @@ password=root
 
 ### 为什么JDK6后不需要Class.forName也能注册驱动？
 
-因为从JDK6开始，`DriverManager`增加了以下静态代码块，当类被加载时会执行static代码块的方法。  
+因为从JDK6开始，`DriverManager`增加了以下静态代码块，当类被加载时会执行static代码块的`loadInitialDrivers`方法。  
 
-而这个方法会去扫描classpath下实现`java.sql.Driver`接口的类，加载后注册。  
+而这个方法会通过**查询系统参数（jdbc.drivers）**和**SPI机制**两种方式去加载数据库驱动。
 
+注意：考虑篇幅，以下代码经过修改，仅保留所需部分。  
 ```java
     static {
         loadInitialDrivers();
     }
+    //这个方法通过两个渠道加载所有数据库驱动：
+    //1. 查询系统参数jdbc.drivers获得数据驱动类名
+    //2. SPI机制
+    private static void loadInitialDrivers() {
+        //通过系统参数jdbc.drivers读取数据库驱动的全路径名。该参数可以通过启动参数来设置，其实引入SPI机制后这一步好像没什么意义了。
+        String drivers;
+        try {
+            drivers = AccessController.doPrivileged(new PrivilegedAction<String>() {
+                public String run() {
+                    return System.getProperty("jdbc.drivers");
+                }
+            });
+        } catch (Exception ex) {
+            drivers = null;
+        }
+        //使用SPI机制加载驱动
+        AccessController.doPrivileged(new PrivilegedAction<Void>() {
+            public Void run() {
+                //读取META-INF/services/java.sql.Driver文件的类全路径名。
+                ServiceLoader<Driver> loadedDrivers = ServiceLoader.load(Driver.class);
+                Iterator<Driver> driversIterator = loadedDrivers.iterator();
+                //加载并初始化类
+                try{
+                    while(driversIterator.hasNext()) {
+                        driversIterator.next();
+                    }
+                } catch(Throwable t) {
+                // Do nothing
+                }
+                return null;
+            }
+        });
+
+        if (drivers == null || drivers.equals("")) {
+            return;
+        }
+        //加载jdbc.drivers参数配置的实现类
+        String[] driversList = drivers.split(":");
+        for (String aDriver : driversList) {
+            try {
+                Class.forName(aDriver, true,
+                        ClassLoader.getSystemClassLoader());
+            } catch (Exception ex) {
+                println("DriverManager.Initialize: load failed: " + ex);
+            }
+        }
+    }
 ```
+补充：SPI机制本质上提供了一种服务发现机制，通过配置文件的方式，实现服务的自动装载，有利于解耦和面向接口编程。具体实现过程为：在项目的`META-INF/services`文件夹下放入以**接口全路径名**命名的文件，并在文件中加入**实现类的全限定名**，接着就可以通过`ServiceLoder`动态地加载实现类。  
+
+打开mysql的驱动包就可以看到一个`java.sql.Driver`文件，里面就是mysql驱动的全路径名。  
+
+![mysql的驱动包中用于支持SPI机制的`java.sql.Driver`文件](https://github.com/ZhangZiSheng001/jdbc-demo/blob/master/img/SPI_01.png)
 
 ## 获得连接对象
 ### DriverManager.getConnection
@@ -267,8 +366,7 @@ password=root
 注意：考虑篇幅，以下代码经过修改，仅保留所需部分。  
 
 ```java
-    public static Connection getConnection(String url,
-        String user, String password) throws SQLException {
+    public static Connection getConnection(String url, String user, String password) throws SQLException {
         java.util.Properties info = new java.util.Properties();
 
         if (user != null) {
@@ -277,15 +375,14 @@ password=root
         if (password != null) {
             info.put("password", password);
         }
-
+        //传入url、包含username和password的信息类、当前调用类
         return (getConnection(url, info, Reflection.getCallerClass()));
     }
-    private static Connection getConnection(
-        String url, java.util.Properties info, Class<?> caller) throws SQLException {
+    private static Connection getConnection(String url, java.util.Properties info, Class<?> caller) throws SQLException {
         ClassLoader callerCL = caller != null ? caller.getClassLoader() : null;
         //遍历所有注册的数据库驱动
         for(DriverInfo aDriver : registeredDrivers) {
-            //先检查这个驱动是否当前类加载器注册的，如果是才进入
+            //先检查这当前类加载器是否有权限加载这个驱动，如果是才进入
             if(isDriverAllowed(aDriver.driver, callerCL)) {
                 //这一步是关键，会去调用Driver的connect方法
                 Connection con = aDriver.driver.connect(url, info);
@@ -305,12 +402,12 @@ password=root
 
 注意：考虑篇幅，以下代码经过修改，仅保留所需部分。  
 ```java
+    //mysql支持多节点部署的策略，根据架构不同，url格式也有所区别。
+    private static final String REPLICATION_URL_PREFIX = "jdbc:mysql:replication://";
+    private static final String URL_PREFIX = "jdbc:mysql://";
+    private static final String MXJ_URL_PREFIX = "jdbc:mysql:mxj://";
+    public static final String LOADBALANCE_URL_PREFIX = "jdbc:mysql:loadbalance://";
     public java.sql.Connection connect(String url, Properties info) throws SQLException {
-         //mysql支持多节点部署的策略，根据架构不同，url也有所区别。
-         private static final String REPLICATION_URL_PREFIX = "jdbc:mysql:replication://";
-         private static final String URL_PREFIX = "jdbc:mysql://";
-         private static final String MXJ_URL_PREFIX = "jdbc:mysql:mxj://";
-         public static final String LOADBALANCE_URL_PREFIX = "jdbc:mysql:loadbalance://";
         //根据url的类型来返回不同的连接对象，这里仅考虑单机版
         ConnectionUrl conStr = ConnectionUrl.getConnectionUrlInstance(url, info);
         switch (conStr.getType()) {
@@ -339,10 +436,12 @@ password=root
 ```java
     private NativeSession session = null;
     public static JdbcConnection getInstance(HostInfo hostInfo) throws SQLException {
+        //调用构造
         return new ConnectionImpl(hostInfo);
     }
     public ConnectionImpl(HostInfo hostInfo) throws SQLException {
-        //根据hostInfo初始化成员属性，包括数据库主机名、端口、用户名、密码、数据库及其他参数设置，这里不放入，其实核心的代码如下： 
+        //先根据hostInfo初始化成员属性，包括数据库主机名、端口、用户名、密码、数据库及其他参数设置等等，这里省略不放入。
+        //最主要看下这句代码 
         createNewIO(false);
     }
     public void createNewIO(boolean isForReconnect) {
@@ -357,7 +456,7 @@ password=root
     private void connectOneTryOnly(boolean isForReconnect) throws SQLException {
 
         JdbcConnection c = getProxy();
-        //调用NativeSession对象的connect方法连接数据库
+        //调用NativeSession对象的connect方法建立和数据库的连接
         this.session.connect(this.origHostInfo, this.user, this.password, this.database, DriverManager.getLoginTimeout() * 1000, c);
         return;
     }
@@ -371,19 +470,22 @@ password=root
 ```java
     public void connect(HostInfo hi, String user, String password, String database, int loginTimeout, TransactionEventHandler transactionManager)
             throws IOException {
-        //采用TCP/IP协议获得物理连接
+        //首先获得TCP/IP连接
         SocketConnection socketConnection = new NativeSocketConnection();
         socketConnection.connect(this.hostInfo.getHost(), this.hostInfo.getPort(), this.propertySet, getExceptionInterceptor(), this.log, loginTimeout);
 
-        // 根据物理连接创建与数据库的通信协议
+        // 对TCP/IP连接进行协议包装
         if (this.protocol == null) {
             this.protocol = NativeProtocol.getInstance(this, socketConnection, this.propertySet, this.log, transactionManager);
         } else {
             this.protocol.init(this, socketConnection, this.propertySet, transactionManager);
         }
 
-        // 创建会话
+        // 通过用户名和密码连接指定数据库，并创建会话
         this.protocol.connect(user, password, database);
     }
 ```
+针对数据库的连接，暂时点到为止，另外还有涉及数据库操作的源码分析，后续再完善补充。  
+
+
 > 学习使我快乐！！
