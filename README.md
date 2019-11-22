@@ -1,4 +1,4 @@
-# Table of Contents
+# 目录
 
 * [简介](#简介)
   * [什么是JDBC](#什么是jdbc)
@@ -488,4 +488,4 @@ class DriverInfo {
 针对数据库的连接，暂时点到为止，另外还有涉及数据库操作的源码分析，后续再完善补充。  
 
 
-> 学习使我快乐！！
+> 版权所有，相关源码请移步：https://github.com/ZhangZiSheng001/jdbc-demo.git
