@@ -488,4 +488,4 @@ class DriverInfo {
 针对数据库的连接，暂时点到为止，另外还有涉及数据库操作的源码分析，后续再完善补充。  
 
 
-> 版权所有，相关源码请移步：https://github.com/ZhangZiSheng001/jdbc-demo.git
+> 本文为原创文章，转载请附上原文出处链接：https://github.com/ZhangZiSheng001/jdbc-demo
