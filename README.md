@@ -55,11 +55,11 @@ JDBC是一套连接和操作数据库的标准、规范。通过提供`DriverMan
 
 ## 工程环境
 JDK：1.8  
- 
+
 maven：3.6.1  
 
 IDE：sts4  
-  
+
 mysql driver：8.0.15  
 
 mysql：5.7  
@@ -487,5 +487,7 @@ class DriverInfo {
 ```
 针对数据库的连接，暂时点到为止，另外还有涉及数据库操作的源码分析，后续再完善补充。  
 
+> 相关源码请移步：https://github.com/ZhangZiSheng001/jdbc-demo.git
 
-> 本文为原创文章，转载请附上原文出处链接：https://github.com/ZhangZiSheng001/jdbc-demo
+> 本文为原创文章，转载请附上原文出处链接：https://www.cnblogs.com/ZhangZiSheng001/p/11917307.html
+
