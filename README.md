@@ -16,7 +16,7 @@
   * [使用Connection对象完成保存操作](#使用connection对象完成保存操作)
 * [源码分析](#源码分析)
   * [驱动注册](#驱动注册)
-    * [DriverManager.registerDriver](#drivermanagerregisterDriver)
+    * [DriverManager.registerDriver](#drivermanagerregisterdriver)
     * [为什么Class.forName(com.mysql.cj.jdbc.Driver) 可以注册驱动？](#为什么classfornamecommysqlcjjdbcdriver-可以注册驱动)
     * [为什么JDK6后不需要Class.forName也能注册驱动？](#为什么jdk6后不需要classforname也能注册驱动)
   * [获得连接对象](#获得连接对象)
@@ -170,48 +170,41 @@ password=root
 
 ## 使用Connection对象完成保存操作
 
-这里简单地模拟实际业务层调用持久层，并开启事务。另外，获取连接、开启事务、提交回滚、释放资源都通过自定义的工具类 `JDBCUtil` 来实现，具体见源码。
+这里简单地模拟实际业务层调用持久层，并开启事务。另外，获取连接、释放资源可以通过自定义的工具类 `JDBCUtil` 来实现，具体见源码。
 
 ```java
 	@Test
-	public void save() {
+	public void save() throws Exception {
 		UserDao userDao = new UserDaoImpl();
 		// 创建用户
-		User user = new User( "zzf002", 18, new Date(), new Date() );
-		try {
+		User user = new User("zzf002", 18, new Date(), new Date());
+		try (Connection connection = JDBCUtil.getConnection()) {
 			// 开启事务
-			JDBCUtil.startTrasaction();
+			connection.setAutoCommit(false);
 			// 保存用户
-			userDao.insert( user );
+			userDao.insert(user);
 			// 提交事务
-			JDBCUtil.commit();
-		} catch( Exception e ) {
-			// 回滚事务
-			JDBCUtil.rollback();
-			e.printStackTrace();
-		} finally {
-			// 释放资源
-			JDBCUtil.release();
+			connection.commit();
 		}
 	}
 ```
 接下来看看具体的保存操作，即DAO层方法。
 
 ```java
-	public void insert( User user ) throws Exception {
+	public void insert(User user) throws Exception {
 		String sql = "insert into demo_user (name,age,gmt_create,gmt_modified) values(?,?,?,?)";
 		Connection connection = JDBCUtil.getConnection();
-		//获取PreparedStatement对象
-		PreparedStatement prepareStatement = connection.prepareStatement( sql );
-		//设置参数
-		prepareStatement.setString( 1, user.getName() );
-		prepareStatement.setInt( 2, user.getAge() );
-		prepareStatement.setDate( 3, new java.sql.Date( user.getGmt_create().getTime() ) );
-		prepareStatement.setDate( 4, new java.sql.Date( user.getGmt_modified().getTime() ) );
-		//执行保存
+		// 获取PreparedStatement对象
+		PreparedStatement prepareStatement = connection.prepareStatement(sql);
+		// 设置参数
+		prepareStatement.setString(1, user.getName());
+		prepareStatement.setInt(2, user.getAge());
+		prepareStatement.setDate(3, new java.sql.Date(user.getGmt_create().getTime()));
+		prepareStatement.setDate(4, new java.sql.Date(user.getGmt_modified().getTime()));
+		// 执行保存
 		prepareStatement.executeUpdate();
-		//释放资源
-		JDBCUtil.release( prepareStatement, null );
+		// 释放资源
+		JDBCUtil.release(prepareStatement, null, null);
 	}
 ```
 

@@ -11,7 +11,7 @@ import com.mysql.cj.jdbc.MysqlXADataSource;
 import com.mysql.cj.jdbc.MysqlXid;
 
 /**
- * @Description: <p>测试XA事务</p>
+ * <p>测试XA事务</p>
  * @author: zzs
  * @date: 2019年12月7日 下午12:47:57
  */
