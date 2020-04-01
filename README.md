@@ -104,22 +104,22 @@ CREATE TABLE `demo_user` (
 ```xml
 <!-- junit -->
 <dependency>
-	<groupId>junit</groupId>
-	<artifactId>junit</artifactId>
-	<version>4.12</version>
-	<scope>test</scope>
+    <groupId>junit</groupId>
+    <artifactId>junit</artifactId>
+    <version>4.12</version>
+    <scope>test</scope>
 </dependency>
 <!-- mysql驱动的jar包 -->
 <dependency>
-	<groupId>mysql</groupId>
-	<artifactId>mysql-connector-java</artifactId>
-	<version>8.0.15</version>
+    <groupId>mysql</groupId>
+    <artifactId>mysql-connector-java</artifactId>
+    <version>8.0.15</version>
 </dependency>
 <!-- oracle驱动的jar包 -->
 <!-- <dependency>
-	<groupId>com.oracle</groupId>
-	<artifactId>ojdbc6</artifactId>
-	<version>11.2.0.2.0</version>
+    <groupId>com.oracle</groupId>
+    <artifactId>ojdbc6</artifactId>
+    <version>11.2.0.2.0</version>
 </dependency> -->
 ```
 注意：由于oracle商业版权问题，maven并不提供`Oracle JDBC driver`，需要将驱动包手动添加到本地仓库或私服。
@@ -149,23 +149,23 @@ password=root
 ## 获得Connection对象
 
 ```java
-	private static Connection createConnection() throws Exception {
-		// 导入配置文件
-		Properties pro = new Properties();
-		InputStream in = JDBCUtil.class.getClassLoader().getResourceAsStream( "jdbc.properties" );
-		Connection conn = null;
-		pro.load( in );
-		// 获取配置文件的信息
-		String driver = pro.getProperty( "driver" );
-		String url = pro.getProperty( "url" );
-		String username = pro.getProperty( "username" );
-		String password = pro.getProperty( "password" );
-		// 注册驱动,JDK6后不需要再手动注册，DirverManager的静态代码块会帮我们注册
-		// Class.forName(driver);
-		// 获得连接
-		conn = DriverManager.getConnection( url, username, password );
-		return conn;
-	}
+    private static Connection createConnection() throws Exception {
+        // 导入配置文件
+        Properties pro = new Properties();
+        InputStream in = JDBCUtil.class.getClassLoader().getResourceAsStream( "jdbc.properties" );
+        Connection conn = null;
+        pro.load( in );
+        // 获取配置文件的信息
+        String driver = pro.getProperty( "driver" );
+        String url = pro.getProperty( "url" );
+        String username = pro.getProperty( "username" );
+        String password = pro.getProperty( "password" );
+        // 注册驱动,JDK6后不需要再手动注册，DirverManager的静态代码块会帮我们注册
+        // Class.forName(driver);
+        // 获得连接
+        conn = DriverManager.getConnection( url, username, password );
+        return conn;
+    }
 ```
 
 ## 使用Connection对象完成保存操作
@@ -173,39 +173,39 @@ password=root
 这里简单地模拟实际业务层调用持久层，并开启事务。另外，获取连接、释放资源可以通过自定义的工具类 `JDBCUtil` 来实现，具体见源码。
 
 ```java
-	@Test
-	public void save() throws Exception {
-		UserDao userDao = new UserDaoImpl();
-		// 创建用户
-		User user = new User("zzf002", 18, new Date(), new Date());
-		try (Connection connection = JDBCUtil.getConnection()) {
-			// 开启事务
-			connection.setAutoCommit(false);
-			// 保存用户
-			userDao.insert(user);
-			// 提交事务
-			connection.commit();
-		}
-	}
+    @Test
+    public void save() throws Exception {
+        UserDao userDao = new UserDaoImpl();
+        // 创建用户
+        User user = new User("zzf002", 18, new Date(), new Date());
+        try (Connection connection = JDBCUtil.getConnection()) {
+            // 开启事务
+            connection.setAutoCommit(false);
+            // 保存用户
+            userDao.insert(user);
+            // 提交事务
+            connection.commit();
+        }
+    }
 ```
 接下来看看具体的保存操作，即DAO层方法。
 
 ```java
-	public void insert(User user) throws Exception {
-		String sql = "insert into demo_user (name,age,gmt_create,gmt_modified) values(?,?,?,?)";
-		Connection connection = JDBCUtil.getConnection();
-		// 获取PreparedStatement对象
-		PreparedStatement prepareStatement = connection.prepareStatement(sql);
-		// 设置参数
-		prepareStatement.setString(1, user.getName());
-		prepareStatement.setInt(2, user.getAge());
-		prepareStatement.setDate(3, new java.sql.Date(user.getGmt_create().getTime()));
-		prepareStatement.setDate(4, new java.sql.Date(user.getGmt_modified().getTime()));
-		// 执行保存
-		prepareStatement.executeUpdate();
-		// 释放资源
-		JDBCUtil.release(prepareStatement, null, null);
-	}
+    public void insert(User user) throws Exception {
+        String sql = "insert into demo_user (name,age,gmt_create,gmt_modified) values(?,?,?,?)";
+        Connection connection = JDBCUtil.getConnection();
+        // 获取PreparedStatement对象
+        PreparedStatement prepareStatement = connection.prepareStatement(sql);
+        // 设置参数
+        prepareStatement.setString(1, user.getName());
+        prepareStatement.setInt(2, user.getAge());
+        prepareStatement.setDate(3, new java.sql.Date(user.getGmt_create().getTime()));
+        prepareStatement.setDate(4, new java.sql.Date(user.getGmt_modified().getTime()));
+        // 执行保存
+        prepareStatement.executeUpdate();
+        // 释放资源
+        JDBCUtil.release(prepareStatement, null, null);
+    }
 ```
 
 # 源码分析
