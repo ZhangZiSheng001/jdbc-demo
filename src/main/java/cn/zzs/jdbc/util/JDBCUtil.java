@@ -17,8 +17,6 @@ public class JDBCUtil {
 
     private static ThreadLocal<Connection> tl = new ThreadLocal<>();
 
-    private static Object lock = new Object();
-
     /**
      * 
      * <p>获取数据库连接对象的方法，线程安全</p>
@@ -31,12 +29,8 @@ public class JDBCUtil {
         Connection connection = tl.get();
         // 判断为空的话，创建连接并绑定到当前线程
         if(connection == null) {
-            synchronized(lock) {
-                if((connection = tl.get()) == null) {
-                    connection = createConnection();
-                    tl.set(connection);
-                }
-            }
+            connection = createConnection();
+            tl.set(connection);
         }
         return connection;
     }
