@@ -1,105 +1,84 @@
-# 目录
+# 什么是 JDBC
 
-* [简介](#简介)
-  * [什么是JDBC](#什么是jdbc)
-  * [几个重要的类](#几个重要的类)
-  * [使用中的注意事项](#使用中的注意事项)
-* [使用例子](#使用例子)
-  * [需求](#需求)
-  * [工程环境](#工程环境)
-  * [主要步骤](#主要步骤)
-  * [创建表](#创建表)
-  * [创建项目](#创建项目)
-  * [引入依赖](#引入依赖)
-  * [编写jdbc.prperties](#编写jdbcprperties)
-  * [获得Connection对象](#获得connection对象)
-  * [使用Connection对象完成保存操作](#使用connection对象完成保存操作)
-* [源码分析](#源码分析)
-  * [驱动注册](#驱动注册)
-    * [DriverManager.registerDriver](#drivermanagerregisterdriver)
-    * [为什么Class.forName(com.mysql.cj.jdbc.Driver) 可以注册驱动？](#为什么classfornamecommysqlcjjdbcdriver-可以注册驱动)
-    * [为什么JDK6后不需要Class.forName也能注册驱动？](#为什么jdk6后不需要classforname也能注册驱动)
-  * [获得连接对象](#获得连接对象)
-    * [DriverManager.getConnection](#drivermanagergetconnection)
-    * [com.mysql.cj.jdbc.Driver.connection](#commysqlcjjdbcdriverconnection)
-    * [ConnectionImpl.getInstance](#connectionimplgetinstance)
-    * [NativeSession.connect](#nativesessionconnect)
+JDBC 规定了 java 应用应该如何连接和操作数据库，它是规范，而非实现，具体的实现由不同的数据库厂商提供。对我们来说，JDBC 有效地将我们的代码和具体的数据库实现解耦合，这是非常有好处的，例如，当我的数据库从 mysql 切换到 oracle 时，几乎不需要调整代码。
 
+本文将详细介绍如何使用 JDBC，这里使用 MySQL Connector/J 8.0 作为具体实现。
 
-# 简介
+当然，本文只是作为学习用途，实际项目中，建议还是使用 mybatis、hibernate 等持久层框架。
 
-## 什么是JDBC
+# 几个重要的类
 
-JDBC是一套连接和操作数据库的标准、规范。通过提供`DriverManager`、`Connection`、`Statement`、`ResultSet`等接口将开发人员与数据库提供商隔离，开发人员只需要面对JDBC接口，无需关心怎么跟数据库交互。
+JDBC 的 API 中，我们只需要关注下面几个类即可。
 
-## 几个重要的类
+| 类名                | 作用                                                         |
+| ------------------- | ------------------------------------------------------------ |
+| `DriverManager`     | 驱动管理器，用于管理驱动以及获取`Connection`对象             |
+| `Connection`        | 与指定数据库的连接/会话，用于获取`Statement`对象、管理事务、获取数据库元数据等。<br>下面的几个类都是在`Connection`的基础上工作的 |
+| `Statement`         | 静态 sql 执行对象                                            |
+| `PreparedStatement` | 预编译 sql 执行对象。相比`Statement`，它可以有效避免 sql 注入，同一 sql 多次执行时性能更好 |
+| `CallableStatement` | 过程执行对象。这个本文不讲                                   |
+| `ResultSet`         | 结果集，用于封装查询结果集。支持对结果集进行写入操作，并同步到数据库 |
 
-类名 | 作用
--|-
-`DriverManager` | 驱动管理器，用于注册驱动，是获取 `Connection`对象的入口
-`Driver` | 数据库驱动，用于获取`Connection`对象
-`Connection` | 数据库连接，用于获取`Statement`对象、管理事务
-`Statement` | sql执行器，用于执行sql
-`ResultSet` | 结果集，用于封装和操作查询结果
-`prepareCall` | 用于调用存储过程
-
-## 使用中的注意事项
-
-1. 记得释放资源。另外，`ResultSet`和`Statement`的关闭都不会导致`Connection`的关闭。
-2. maven要引入oracle的驱动包，要把jar包安装在本地仓库或私服才行。
-3. 使用`PreparedStatement`而不是`Statement`。可以避免SQL注入，并且利用预编译的特点可以提高效率。
-
-# 使用例子
+# 如何使用JDBC
 
 ## 需求
 
-使用JDBC对mysql数据库的用户表进行增删改查。
+使用 JDBC 对 mysql 数据库的用户表进行增删改查等操作。
 
-## 工程环境
-JDK：1.8
+## 项目环境
 
-maven：3.6.1
+本文使用的 MySQL Connector/J 8.0，它实现了 JDBC 4.2，要求 JDK 版本 1.8 及以上，允许的 mysql 版本为 5.6，5.7 和 8.0。
 
-IDE：sts4
+JDK：1.8.0_231
+
+maven：3.6.3
+
+IDE：ideaIC-2021.1.win
 
 mysql driver：8.0.15
 
-mysql：5.7
+mysql：5.7.28
 
-## 主要步骤
+## 创建表和数据
 
-一个完整的JDBC保存操作主要包括以下步骤：
-
-1. 注册驱动（JDK6后会自动注册，可忽略该步骤）;
-2. 通过`DriverManager`获得`Connection`对象;
-3. 开启事务;
-4. 通过`Connection`获得`PreparedStatement`对象;
-5. 设置`PreparedStatement`的参数;
-6. 执行保存操作;
-7. 保存成功提交事务，保存失败回滚事务;
-8. 释放资源，包括`Connection`、`PreparedStatement`。
-
-## 创建表
+这里简单地新建一张用户表，并初始化三行记录。
 
 ```sql
+CREATE DATABASE `github_demo` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+
+USE `github_demo`;
+
+DROP TABLE IF EXISTS `demo_user`;
+
 CREATE TABLE `demo_user` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '用户id',
-  `name` varchar(16) COLLATE utf8_unicode_ci NOT NULL COMMENT '用户名',
+  `id` varchar(32) NOT NULL COMMENT '用户id',
+  `name` varchar(16) NOT NULL COMMENT '用户名',
+  `gender` tinyint(1) DEFAULT '0' COMMENT '性别',
   `age` int(3) unsigned DEFAULT NULL COMMENT '用户年龄',
-  `gmt_create` datetime DEFAULT NULL COMMENT '记录创建时间',
-  `gmt_modified` datetime DEFAULT NULL COMMENT '记录最近修改时间',
-  `deleted` bit(1) DEFAULT b'0' COMMENT '是否删除',
+  `gmt_create` timestamp NULL DEFAULT NULL COMMENT '记录创建时间',
+  `gmt_modified` timestamp NULL DEFAULT NULL COMMENT '记录最近修改时间',
+  `deleted` tinyint(1) DEFAULT '0' COMMENT '是否删除',
+  `phone` varchar(11) NOT NULL COMMENT '电话号码',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_name` (`name`),
-  KEY `index_age` (`age`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
+  KEY `idx_phone` (`phone`),
+  KEY `idx_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+INSERT INTO `demo_user` (`id`, `name`, `gender`, `age`, `gmt_create`
+	, `gmt_modified`, `deleted`, `phone`)
+VALUES ('11111111111111111111111111111111', 'zzs001', 0, 17, '2021-04-28 11:25:18'
+		, '2021-05-02 09:33:56', 0, '188******42'),
+	('4480067e571040089cb6b821fe94085a', 'zzf001', 0, 18, '2021-05-02 09:33:56'
+		, '2021-05-02 09:33:56', 0, '188******26'),
+	('678c5d2daf0c43d4b97e0633c8fc255d', 'zzs003', 0, 18, '2021-04-28 11:25:18'
+		, '2021-04-28 11:25:42', 0, '188******43'),
+	('8b9eb24b87b34092a1c4bb1ef06f26be', 'zzs002', 0, 18, '2021-04-28 11:25:18'
+		, '2021-04-28 11:25:42', 0, '188******41');
 ```
 
-## 创建项目
-
-项目类型Maven Project，打包方式jar
-
 ## 引入依赖
+
+项目类型 Maven Project，打包方式 jar。
 
 ```xml
 <!-- junit -->
@@ -115,164 +94,153 @@ CREATE TABLE `demo_user` (
     <artifactId>mysql-connector-java</artifactId>
     <version>8.0.15</version>
 </dependency>
-<!-- oracle驱动的jar包 -->
-<!-- <dependency>
-    <groupId>com.oracle</groupId>
-    <artifactId>ojdbc6</artifactId>
-    <version>11.2.0.2.0</version>
-</dependency> -->
 ```
-注意：由于oracle商业版权问题，maven并不提供`Oracle JDBC driver`，需要将驱动包手动添加到本地仓库或私服。
 
-## 编写jdbc.prperties
-
-下面的url拼接了好几个参数，主要为了避免乱码和时区报错的异常。
-
-路径：resources目录下
-
-```properties
-driver=com.mysql.cj.jdbc.Driver
-url=jdbc:mysql://localhost:3306/github_demo?useUnicode=true&characterEncoding=utf8&serverTimezone=GMT%2B8&useSSL=true
-#这里指定了字符编码和解码格式，时区，是否加密传输
-username=root
-password=root
-#注意，xml配置是&采用&amp;替代
-```
-如果是oracle数据库，配置如下：
-
-```properties
-driver=oracle.jdbc.driver.OracleDriver
-url=jdbc:oracle:thin:@//localhost:1521/xe
-username=system
-password=root
-```
 ## 获得Connection对象
+
+这里的`DriverManager`创建`Connection`对象本质是调用了`com.mysql.cj.jdbc.Driver`，以前我们需要显式向`DriverManager`注册驱动，JDK6 之后就不需要了。而且，当我在项目中同时存在 mysql 驱动和 oracle 驱动时，`DriverManager`能够自动判断使用哪个驱动来获取连接（其实就是遍历所有驱动直到正确获取连接，按照 JDBC 规范，当发现  url 类型不匹配时，`java.sql.Driver#connect`应立即返回 null）。
+
+MySQL Connector/J 的 url 支持的格式和参数非常多，例如，可以设置对等、设置主从节点等等，详见[Connection URL Syntax]([MySQL :: MySQL Connector/J 8.0 Developer Guide :: 6.2 Connection URL Syntax](https://dev.mysql.com/doc/connector-j/8.0/en/connector-j-reference-jdbc-url-format.html))和[Configuration Properties]([MySQL :: MySQL Connector/J 8.0 Developer Guide :: 6.3 Configuration Properties](https://dev.mysql.com/doc/connector-j/8.0/en/connector-j-reference-configuration-properties.html))。这里设置了字符编码和时区，不然会报错。
 
 ```java
     private static Connection createConnection() throws Exception {
-        // 导入配置文件
-        Properties pro = new Properties();
-        InputStream in = JDBCUtil.class.getClassLoader().getResourceAsStream( "jdbc.properties" );
-        Connection conn = null;
-        pro.load( in );
-        // 获取配置文件的信息
-        String driver = pro.getProperty( "driver" );
-        String url = pro.getProperty( "url" );
-        String username = pro.getProperty( "username" );
-        String password = pro.getProperty( "password" );
-        // 注册驱动,JDK6后不需要再手动注册，DirverManager的静态代码块会帮我们注册
-        // Class.forName(driver);
+        String url = "jdbc:mysql://localhost:3306/github_demo?characterEncoding=utf8&serverTimezone=GMT%2B8";
+        String username = "root";
+        String password = "root";
+        // 注册驱动,JDK6后不需要再手动注册，DirverManager的静态代码块会使用SPI机制自动发现和注册
+        // Class.forName("com.mysql.cj.jdbc.Driver");
         // 获得连接
-        conn = DriverManager.getConnection( url, username, password );
+        connection = DriverManager.getConnection(url, username, password);
         return conn;
     }
 ```
 
-## 使用Connection对象完成保存操作
+## 新增用户
 
-这里简单地模拟实际业务层调用持久层，并开启事务。另外，获取连接、释放资源可以通过自定义的工具类 `JDBCUtil` 来实现，具体见源码。
+以下代码使用`PreparedStatement`来执行语句，相比`Statement`，它可以更好地避免 sql 注入，当同一个语句多次使用时，`PreparedStatement`的性能更好。
 
-```java
-    @Test
-    public void save() throws Exception {
-        UserDao userDao = new UserDaoImpl();
-        // 创建用户
-        User user = new User("zzf002", 18, new Date(), new Date());
-        try (Connection connection = JDBCUtil.getConnection()) {
-            // 开启事务
-            connection.setAutoCommit(false);
-            // 保存用户
-            userDao.insert(user);
-            // 提交事务
-            connection.commit();
-        }
-    }
-```
-接下来看看具体的保存操作，即DAO层方法。
+在入参的映射上，java 类型和 jdbc 类型的对应关系为[Java, JDBC, and MySQL Types]([MySQL :: MySQL Connector/J 8.0 Developer Guide :: 6.5 Java, JDBC, and MySQL Types](https://dev.mysql.com/doc/connector-j/8.0/en/connector-j-reference-type-conversions.html))。
+
+注意，使用后记得释放资源，`Connection`和`Statement`都需要关闭掉。
 
 ```java
-    public void insert(User user) throws Exception {
-        String sql = "insert into demo_user (name,age,gmt_create,gmt_modified) values(?,?,?,?)";
-        Connection connection = JDBCUtil.getConnection();
-        // 获取PreparedStatement对象
+    private void save(User user) throws SQLException {
+        // 开启事务
+        connection.setAutoCommit(false);
+        // 创建PreparedStatement对象
+        String sql = "insert into demo_user (id,name,gender,age,gmt_create,gmt_modified,deleted,phone) values(?,?,?,?,?,?,?,?)";
         PreparedStatement prepareStatement = connection.prepareStatement(sql);
-        // 设置参数
-        prepareStatement.setString(1, user.getName());
-        prepareStatement.setInt(2, user.getAge());
-        prepareStatement.setDate(3, new java.sql.Date(user.getGmt_create().getTime()));
-        prepareStatement.setDate(4, new java.sql.Date(user.getGmt_modified().getTime()));
-        // 执行保存
-        prepareStatement.executeUpdate();
+        // 入参的映射
+        prepareStatement.setString(1, user.getId());
+        prepareStatement.setString(2, user.getName());
+        prepareStatement.setInt(3, user.getGender());
+        prepareStatement.setInt(4, user.getAge());
+        prepareStatement.setTimestamp(5, Timestamp.from(Instant.now()));
+        prepareStatement.setTimestamp(6, Timestamp.from(Instant.now()));
+        prepareStatement.setInt(7, 0);
+        prepareStatement.setString(8, user.getPhone());
+        // 执行sql
+        int result = prepareStatement.executeUpdate();
+        System.err.println(result);
+        // 提交事务
+        connection.commit();
         // 释放资源
-        JDBCUtil.release(prepareStatement, null, null);
+        prepareStatement.close();
+        connection.close();
     }
 ```
 
-# 源码分析
+## 查询用户
 
-## 驱动注册
+新增、更新、删除调用`executeUpdate`方法执行语句，而查询调用的是`executeQuery`，但有些情况下，我们区分不了当前的 sql 是否为查询语句，这个时候可以直接调用`execute()` ，当返回值为 true 时即为查询。
 
-### DriverManager.registerDriver
-
-`DriverManager`主要用于管理数据库驱动，并为我们提供了获取连接对象的接口。其中，它有一个重要的成员属性`registeredDrivers`，是一个`CopyOnWriteArrayList`集合（通过`ReentrantLock`实现线程安全），存放的是元素是`DriverInfo`对象。 
+通过例子我们发现，纯粹使用 JDBC 操作数据库是非常繁琐的，我们需要手动地进行入参映射、出参映射、释放资源等等操作。所以，持久层框架还是挺重要的。
 
 ```java
-    //存放数据库驱动包装类的集合（线程安全）
-    private final static CopyOnWriteArrayList<DriverInfo> registeredDrivers = new CopyOnWriteArrayList<>(); 
-    public static synchronized void registerDriver(java.sql.Driver driver)
-        throws SQLException {
-        //调用重载方法，传入的DriverAction对象为null
-        registerDriver(driver, null);
-    }
-    public static synchronized void registerDriver(java.sql.Driver driver,
-            DriverAction da)
-        throws SQLException {
-        if(driver != null) {
-            //当列表中没有这个DriverInfo对象时，加入列表。
-            //注意，这里判断对象是否已经存在，最终比较的是driver地址是否相等。
-            registeredDrivers.addIfAbsent(new DriverInfo(driver, da));
-        } else {
-            throw new NullPointerException();
+    private List<User> findAll() throws SQLException {
+        // 创建PreparedStatement对象
+        String sql = "select * from demo_user where deleted = 0";
+        PreparedStatement prepareStatement = connection.prepareStatement(sql);
+        // 执行sql
+        ResultSet resultSet = prepareStatement.executeQuery();
+        // 出参的映射
+        List<User> list = new ArrayList<User>();
+        while (resultSet.next()) {
+            User user = new User();
+            user = new User();
+            user.setId(resultSet.getString(1));
+            user.setName(resultSet.getString(2));
+            user.setGender(resultSet.getInt(3));
+            user.setAge(resultSet.getInt(4));
+            user.setGmt_create(resultSet.getDate(5));
+            user.setGmt_modified(resultSet.getDate(6));
+            user.setDeleted(resultSet.getInt(7));
+            user.setPhone(resultSet.getString(8));
+            list.add(user);
         }
-
-        println("registerDriver: " + driver);
-
+        // 释放资源
+        resultSet.close();
+        prepareStatement.close();
+        connection.close();
+        return list;
     }
-
 ```
-为什么集合存放的是`Driver`的包装类`DriverInfo`对象，而不是`Driver`对象呢？
 
-1. 通过`DriverInfo`的源码可知，当我们调用`equals`方法比较两个`DriverInfo`对象是否相等时，实际上比较的是`Driver`对象的地址，也就是说，我可以在`DriverManager`中注册多个MYSQL驱动。而如果直接存放的是`Driver`对象，就不能达到这种效果（因为没有遇到需要注册多个同类驱动的场景，所以我暂时理解不了这样做的好处）。
-
-2. `DriverInfo`中还包含了另一个成员属性`DriverAction`，当我们注销驱动时，必须调用它的`deregister`方法后才能将驱动从注册列表中移除，该方法决定注销驱动时应该如何处理活动连接等（其实一般在构造`DriverInfo`进行注册时，传入的`DriverAction`对象为空，根本不会去使用到这个对象，除非一开始注册就传入非空`DriverAction`对象）。
-
-综上，集合中元素不是`Driver`对象而`DriverInfo`对象，主要考虑的是扩展某些功能，虽然这些功能几乎不会用到。
-
-注意：考虑篇幅，以下代码经过修改，仅保留所需部分。
+默认情况下，`ResultSet`只能向前读取，也就是说，它只能被遍历一次，这个特点有点像`InputStream`。按照 JDBC 规范，`ResultSet`支持随机读取，并且在读取结果集时，我们还可以进行写入操作。在`createStatement`或`prepareStatement`方法中指定结果集的滚动和读写类型即可。
 
 ```java
-class DriverInfo {
-
-    final Driver driver;
-    DriverAction da;
-    DriverInfo(Driver driver, DriverAction action) {
-        this.driver = driver;
-        da = action;
+    public void testResultSet() throws Exception {
+        String sql = "select * from demo_user where deleted = 0 order by name desc";
+        /**
+         ResultSet的几个属性
+         结果集不能滚动(默认值)
+         int TYPE_FORWARD_ONLY = 1003;
+         结果集可以滚动，但对数据库变化不敏感
+         int TYPE_SCROLL_INSENSITIVE = 1004;
+         结果集可以滚动，且对数据库变化敏感
+         int TYPE_SCROLL_SENSITIVE = 1005;
+         结果集不能用于更新数据库(默认值)
+         int CONCUR_READ_ONLY = 1007;
+         结果集可以用于更新数据库
+         int CONCUR_UPDATABLE = 1008;
+         */
+        Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_UPDATABLE);
+        // 执行查询并返回结果集
+        ResultSet rs = statement.executeQuery(sql);
+        // 测试插入数据
+        rs.moveToInsertRow();// 把游标移动到插入行，默认在最后一行。
+        rs.updateString(1, IdUtils.randomUUID());
+        rs.updateString(2, "李四");
+        rs.updateInt(3, 0);
+        rs.updateInt(4, 26);
+        rs.updateTimestamp(5, Timestamp.from(Instant.now()));
+        rs.updateTimestamp(6, Timestamp.from(Instant.now()));
+        rs.updateInt(7, 0);
+        rs.updateString(8, "188******49");
+        rs.insertRow();// 插入数据
+        rs.moveToCurrentRow();// 把游标移动到新插入数据所在行
+        // 测试删除数据
+        // rs.absolute(2);// 移动游标到第二行
+        // rs.deleteRow();// 删除第二行数据
+        // 遍历所有数据
+        while (rs.next()) {
+            // 测试更新数据
+            rs.updateTimestamp(6, Timestamp.from(Instant.now()));
+            rs.updateRow();
+        }
+        statement.close();
     }
-
-    @Override
-    public boolean equals(Object other) {
-        //这里对比的是地址
-        return (other instanceof DriverInfo)
-                && this.driver == ((DriverInfo) other).driver;
-    }
-
-}
 ```
 
-### 为什么Class.forName(com.mysql.cj.jdbc.Driver) 可以注册驱动？ 
+# 几个小问题
 
-当加载`com.mysql.cj.jdbc.Driver`这个类时，静态代码块中会执行注册驱动的方法。
+## 为什么Class.forName可以注册驱动？ 
+
+首先，这里说的注册驱动，指的是将`java.sql.Driver`实现类（例如，mysql 的`com.mysql.cj.jdbc.Driver`）注册到`DriverManager`。
+
+以前我们会使用`Class.forName("com.mysql.cj.jdbc.Driver")`来注册驱动。只是加载了这个类，为什么可以注册上去呢？
+
+其实，原理非常简单。打开`com.mysql.cj.jdbc.Driver`时，我们可以看到，静态代码块中会执行注册驱动的方法，而加载这个类时，静态代码块会被执行。
 
 ```java
     static {
@@ -285,11 +253,11 @@ class DriverInfo {
     }
 ```
 
-### 为什么JDK6后不需要Class.forName也能注册驱动？
+## 为什么JDK6后不需要Class.forName也能注册驱动？
 
-因为从JDK6开始，`DriverManager`增加了以下静态代码块，当类被加载时会执行static代码块的`loadInitialDrivers`方法。
+上面的使用例子中，`Class.forName("com.mysql.cj.jdbc.Driver");`这一行代码被我注释掉了，但不影响我们使用。也就是说，在项目的其他地方`com.mysql.cj.jdbc.Driver`被注册上去了。
 
-而这个方法会通过**查询系统参数（jdbc.drivers）**和**SPI机制**两种方式去加载数据库驱动。
+答案在`DriverManager`这个类里面。JDK6 之后，`DriverManager`增加了以下静态代码块，在这段静态代码块中，会通过**查询系统参数（jdbc.drivers）**和**SPI机制**两种方式去加载数据库驱动。
 
 注意：考虑篇幅，以下代码经过修改，仅保留所需部分。
 
@@ -297,11 +265,11 @@ class DriverInfo {
     static {
         loadInitialDrivers();
     }
-    //这个方法通过两个渠道加载所有数据库驱动：
-    //1. 查询系统参数jdbc.drivers获得数据驱动类名
+    //这个方法通过两个方式加载所有数据库驱动：
+    //1. 查询系统参数jdbc.drivers获得数据驱动类名，多个以“:”分隔
     //2. SPI机制
     private static void loadInitialDrivers() {
-        //通过系统参数jdbc.drivers读取数据库驱动的全路径名。该参数可以通过启动参数来设置，其实引入SPI机制后这一步好像没什么意义了。
+        // 通过系统参数jdbc.drivers读取数据库驱动的全路径名
         String drivers;
         try {
             drivers = AccessController.doPrivileged(new PrivilegedAction<String>() {
@@ -312,13 +280,14 @@ class DriverInfo {
         } catch (Exception ex) {
             drivers = null;
         }
-        //使用SPI机制加载驱动
+        // 使用SPI机制加载驱动
         AccessController.doPrivileged(new PrivilegedAction<Void>() {
             public Void run() {
-                //读取META-INF/services/java.sql.Driver文件的类全路径名。
+                // 读取META-INF/services/java.sql.Driver文件的类全路径名
                 ServiceLoader<Driver> loadedDrivers = ServiceLoader.load(Driver.class);
                 Iterator<Driver> driversIterator = loadedDrivers.iterator();
-                //加载并初始化类
+                // 实例化对象java.sql.Driver实现类
+                // 这个过程会自动注册
                 try{
                     while(driversIterator.hasNext()) {
                         driversIterator.next();
@@ -333,10 +302,11 @@ class DriverInfo {
         if (drivers == null || drivers.equals("")) {
             return;
         }
-        //加载jdbc.drivers参数配置的实现类
+        // 加载jdbc.drivers参数配置的实现类
         String[] driversList = drivers.split(":");
         for (String aDriver : driversList) {
             try {
+                // 这个过程会自动注册
                 Class.forName(aDriver, true,
                         ClassLoader.getSystemClassLoader());
             } catch (Exception ex) {
@@ -346,150 +316,21 @@ class DriverInfo {
     }
 ```
 
-补充：SPI机制本质上提供了一种服务发现机制，通过配置文件的方式，实现服务的自动装载，有利于解耦和面向接口编程。具体实现过程为：在项目的`META-INF/services`文件夹下放入以**接口全路径名**命名的文件，并在文件中加入**实现类的全限定名**，接着就可以通过`ServiceLoder`动态地加载实现类。
+补充：SPI机制本质上提供了一种服务发现机制，通过配置文件的方式，实现服务的自动装载，有利于解耦和面向接口编程。具体实现过程为：在项目的`META-INF/services`文件夹下放入以**接口全路径名**命名的文件，并在文件中加入**实现类的全限定名**，接着就可以通过`ServiceLoder`动态地加载实现类。详见[使用SPI解耦你的实现类](https://www.cnblogs.com/ZhangZiSheng001/p/12114744.html)。
 
-打开mysql的驱动包就可以看到一个`java.sql.Driver`文件，里面就是mysql驱动的全路径名。
+打开 mysql 的驱动包就可以看到一个`java.sql.Driver`文件，里面就是mysql驱动的全路径名。
 
 ![mysql的驱动包中用于支持SPI机制的`java.sql.Driver`文件](https://img2018.cnblogs.com/blog/1731892/201911/1731892-20191123120532046-1819296537.png)
 
+以上简单讲完 JDBC 的内容，后面发现有趣的功能再作扩展。
 
-## 获得连接对象
-### DriverManager.getConnection
-获取连接对象的入口是`DriverManager.getConnection`，调用时需要传入url、username和password。
+最后，感谢阅读。
 
-获取连接对象需要调用`java.sql.Driver`实现类（即数据库驱动）的方法，而具体调用哪个实现类呢？
+# 参考资料
 
-正如前面讲到的，注册的数据库驱动被存放在`registeredDrivers`中，所以只有从这个集合中获取就可以了。
+[MySQL Connector/J 8.0 Developer Guide](https://dev.mysql.com/doc/relnotes/mysql/8.0/en/)
 
-注意：考虑篇幅，以下代码经过修改，仅保留所需部分。
-
-```java
-    public static Connection getConnection(String url, String user, String password) throws SQLException {
-        java.util.Properties info = new java.util.Properties();
-
-        if (user != null) {
-            info.put("user", user);
-        }
-        if (password != null) {
-            info.put("password", password);
-        }
-        //传入url、包含username和password的信息类、当前调用类
-        return (getConnection(url, info, Reflection.getCallerClass()));
-    }
-    private static Connection getConnection(String url, java.util.Properties info, Class<?> caller) throws SQLException {
-        ClassLoader callerCL = caller != null ? caller.getClassLoader() : null;
-        //遍历所有注册的数据库驱动
-        for(DriverInfo aDriver : registeredDrivers) {
-            //先检查这当前类加载器是否有权限加载这个驱动，如果是才进入
-            if(isDriverAllowed(aDriver.driver, callerCL)) {
-                //这一步是关键，会去调用Driver的connect方法
-                Connection con = aDriver.driver.connect(url, info);
-                if (con != null) {
-                    return con;
-                }
-            } else {
-                println("    skipping: " + aDriver.getClass().getName());
-            }
-        }
-    }
-```
-### com.mysql.cj.jdbc.Driver.connection
-
-由于使用的是mysql的数据驱动，这里实际调用的是`com.mysql.cj.jdbc.Driver`的方法。
-
-从以下代码可以看出，mysql支持支持多节点部署的策略，本文仅对单机版进行扩展。
-
-注意：考虑篇幅，以下代码经过修改，仅保留所需部分。
-
-```java
-    //mysql支持多节点部署的策略，根据架构不同，url格式也有所区别。
-    private static final String REPLICATION_URL_PREFIX = "jdbc:mysql:replication://";
-    private static final String URL_PREFIX = "jdbc:mysql://";
-    private static final String MXJ_URL_PREFIX = "jdbc:mysql:mxj://";
-    public static final String LOADBALANCE_URL_PREFIX = "jdbc:mysql:loadbalance://";
-    public java.sql.Connection connect(String url, Properties info) throws SQLException {
-        //根据url的类型来返回不同的连接对象，这里仅考虑单机版
-        ConnectionUrl conStr = ConnectionUrl.getConnectionUrlInstance(url, info);
-        switch (conStr.getType()) {
-            case SINGLE_CONNECTION:
-                //调用ConnectionImpl.getInstance获取连接对象
-                return com.mysql.cj.jdbc.ConnectionImpl.getInstance(conStr.getMainHost());
-
-            case LOADBALANCE_CONNECTION:
-                return LoadBalancedConnectionProxy.createProxyInstance((LoadbalanceConnectionUrl) conStr);
-
-            case FAILOVER_CONNECTION:
-                return FailoverConnectionProxy.createProxyInstance(conStr);
-
-            case REPLICATION_CONNECTION:
-                return ReplicationConnectionProxy.createProxyInstance((ReplicationConnectionUrl) conStr);
-
-            default:
-                return null;
-        }
-    }
-```
-### ConnectionImpl.getInstance
-
-这个类有个比较重要的字段`session`，可以把它看成一个会话，和我们平时浏览器访问服务器的会话差不多，后续我们进行数据库操作就是基于这个会话来实现的。
-
-注意：考虑篇幅，以下代码经过修改，仅保留所需部分。 
-
-```java
-    private NativeSession session = null;
-    public static JdbcConnection getInstance(HostInfo hostInfo) throws SQLException {
-        //调用构造
-        return new ConnectionImpl(hostInfo);
-    }
-    public ConnectionImpl(HostInfo hostInfo) throws SQLException {
-        //先根据hostInfo初始化成员属性，包括数据库主机名、端口、用户名、密码、数据库及其他参数设置等等，这里省略不放入。
-        //最主要看下这句代码 
-        createNewIO(false);
-    }
-    public void createNewIO(boolean isForReconnect) {
-        if (!this.autoReconnect.getValue()) {
-            //这里只看不重试的方法
-            connectOneTryOnly(isForReconnect);
-            return;
-        }
-
-        connectWithRetries(isForReconnect);
-    }
-    private void connectOneTryOnly(boolean isForReconnect) throws SQLException {
-
-        JdbcConnection c = getProxy();
-        //调用NativeSession对象的connect方法建立和数据库的连接
-        this.session.connect(this.origHostInfo, this.user, this.password, this.database, DriverManager.getLoginTimeout() * 1000, c);
-        return;
-    }
-
-```
-### NativeSession.connect
-
-接下来的代码主要是建立会话的过程，首先时建立物理连接，然后根据协议建立会话。
-
-注意：考虑篇幅，以下代码经过修改，仅保留所需部分。 
-
-```java
-    public void connect(HostInfo hi, String user, String password, String database, int loginTimeout, TransactionEventHandler transactionManager)
-            throws IOException {
-        //首先获得TCP/IP连接
-        SocketConnection socketConnection = new NativeSocketConnection();
-        socketConnection.connect(this.hostInfo.getHost(), this.hostInfo.getPort(), this.propertySet, getExceptionInterceptor(), this.log, loginTimeout);
-
-        // 对TCP/IP连接进行协议包装
-        if (this.protocol == null) {
-            this.protocol = NativeProtocol.getInstance(this, socketConnection, this.propertySet, this.log, transactionManager);
-        } else {
-            this.protocol.init(this, socketConnection, this.propertySet, transactionManager);
-        }
-
-        // 通过用户名和密码连接指定数据库，并创建会话
-        this.protocol.connect(user, password, database);
-    }
-```
-
-针对数据库的连接，暂时点到为止，另外还有涉及数据库操作的源码分析，后续再完善补充。
+> 2021-05-02 更改
 
 > 相关源码请移步：https://github.com/ZhangZiSheng001/jdbc-demo
 
