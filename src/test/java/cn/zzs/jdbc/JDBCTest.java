@@ -167,10 +167,10 @@ public class JDBCTest {
         // 执行sql
         int result = prepareStatement.executeUpdate();
         System.err.println(result);
-        // 释放资源
-        prepareStatement.close();
         // 提交事务
         connection.commit();
+        // 释放资源
+        prepareStatement.close();
     }
 
     /**
