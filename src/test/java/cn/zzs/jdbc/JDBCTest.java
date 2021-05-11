@@ -22,7 +22,7 @@ import java.util.Properties;
  * @date 2021/5/2
  * @version 1.0.0
  */
-public class UserDaoTest {
+public class JDBCTest {
 
     private Connection connection;
 
@@ -32,7 +32,7 @@ public class UserDaoTest {
     public void setup() throws IOException, SQLException {
         // 加载配置文件
         Properties pro = new Properties();
-        InputStream in = UserDaoTest.class.getClassLoader().getResourceAsStream("jdbc.properties");
+        InputStream in = JDBCTest.class.getClassLoader().getResourceAsStream("jdbc.properties");
         pro.load(in);
         // 获取配置文件的信息
         String url = pro.getProperty("url");

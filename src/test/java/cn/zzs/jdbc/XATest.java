@@ -1,19 +1,21 @@
 package cn.zzs.jdbc;
 
-import com.mysql.cj.jdbc.MysqlXADataSource;
-import com.mysql.cj.jdbc.MysqlXid;
-import org.junit.Test;
-
-import javax.sql.XAConnection;
-import javax.transaction.xa.XAException;
-import javax.transaction.xa.XAResource;
-import javax.transaction.xa.Xid;
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
+
+import javax.sql.XAConnection;
+import javax.transaction.xa.XAException;
+import javax.transaction.xa.XAResource;
+import javax.transaction.xa.Xid;
+
+import org.junit.Test;
+
+import com.mysql.cj.jdbc.MysqlXADataSource;
+import com.mysql.cj.jdbc.MysqlXid;
 
 /**
  * 测试XA事务
@@ -26,7 +28,7 @@ public class XATest {
     public MysqlXADataSource getDataSource01() throws IOException {
         // 加载配置文件
         Properties pro = new Properties();
-        InputStream in = UserDaoTest.class.getClassLoader().getResourceAsStream("jdbc.properties");
+        InputStream in = XATest.class.getClassLoader().getResourceAsStream("jdbc.properties");
         pro.load(in);
         // 获取配置文件的信息
         String url = pro.getProperty("url");
@@ -44,7 +46,7 @@ public class XATest {
     public MysqlXADataSource getDataSource02() throws IOException {
         // 加载配置文件
         Properties pro = new Properties();
-        InputStream in = UserDaoTest.class.getClassLoader().getResourceAsStream("jdbc.properties");
+        InputStream in = XATest.class.getClassLoader().getResourceAsStream("jdbc.properties");
         pro.load(in);
         // 获取配置文件的信息
         String url = pro.getProperty("url2");
