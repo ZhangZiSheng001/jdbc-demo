@@ -330,7 +330,7 @@ MySQL Connector/J 的 url 支持的格式和参数非常多，例如，可以设
 
 [MySQL Connector/J 8.0 Developer Guide](https://dev.mysql.com/doc/relnotes/mysql/8.0/en/)
 
-> 2021-05-02 更改
+> 已停止更新
 
 > 相关源码请移步：https://github.com/ZhangZiSheng001/jdbc-demo
 
