@@ -270,5 +270,16 @@ public class JDBCTest {
         }
         statement.close();
     }
+    
+    @Test
+    public void getMetaData() throws SQLException {
+        DatabaseMetaData metaData = connection.getMetaData();
+        ResultSet rs = metaData.getTables("github_demo", "%", "%", new String[] { "TABLE" });
+        
+        while (rs.next()) {
+            System.err.println(rs.getString("TABLE_NAME"));
+            System.err.println(rs.getString("REMARKS"));
+        }
+    }
 
 }
